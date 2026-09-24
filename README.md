@@ -29,6 +29,17 @@ result.covered_at        # 0.9 -- the guarantee this set was built to satisfy
 See [`examples/quickstart.py`](examples/quickstart.py) for a runnable,
 no-dependencies example.
 
+For an existing function (a FastAPI route, a LangChain/Instructor call, a
+raw model `.predict()`), skip the object model entirely with the decorator:
+
+```python
+@sureband.calibrated(calibrator)
+def classify_ticket(text: str) -> dict:
+    return my_model.predict(text)   # unchanged -- still returns a raw dict
+
+classify_ticket("my invoice is wrong")   # now returns a ConformalResult
+```
+
 ## Install
 
 ```bash
@@ -82,6 +93,17 @@ out the limits from us than from a critique.
   shifted user base), the coverage guarantee degrades along with it. Recalibrate
   periodically on fresh held-out data, the same way you'd re-validate any
   monitored model.
+- **Coverage is marginal, not per-class.** The guarantee holds *on average*
+  across all your data, not for every category individually. If "sales"
+  tickets are 2% of your calibration set, sureband can hit 90% overall
+  coverage while quietly doing much worse on "sales" specifically. If some
+  categories matter more than others (rare-but-important cases especially),
+  don't trust the marginal number alone — check per-class coverage yourself,
+  or wait for class-conditional (Mondrian) support, which isn't built yet.
+- **Calibration is a snapshot, not a subscription.** `Calibrator` doesn't
+  update itself after `fit()`. If your traffic distribution drifts, the
+  guarantee quietly drifts with it until you refit on fresh data — there's
+  no online/streaming recalibration yet.
 - **Calibration data must not be training data.** Reusing examples the
   underlying model was trained or fine-tuned on will silently invalidate
   the guarantee — there is no way for sureband to detect this for you.
@@ -91,6 +113,36 @@ out the limits from us than from a critique.
   correct, honest behavior, but it will not feel impressive in a demo.
   sureband tells you when to trust a decision, it doesn't improve the
   decision itself.
+
+## Validated on a real model
+
+Everything above is demonstrated with synthetic data. Here's what happened
+running sureband against real Laya (`convaiinnovations/laya`) on real
+datasets — no synthetic miscalibration, no cherry-picking:
+
+| Dataset | Decision | Classes | Split | Top-1 acc. | Mean confidence | Gap | Coverage | Mean set size |
+|---|---|---|---|---|---|---|---|---|
+| AG News | noul (binary) | 2 | 600/600 | 91.5% | 90.5% | −1.0% | 100.0% | 1.71 / 2 |
+| AG News | choice | 4 | 300/300 | 92.0% | 75.2% | −16.8% | 100.0% | 3.05 / 4 |
+| 20 Newsgroups | choice | 10 | 375/375 | 59.7% | 30.6% | −29.1% | 94.7% | 5.97 / 10 |
+
+Full setup in [`examples/laya_integration.py`](examples/laya_integration.py)
+and [`examples/newsgroups_choice_integration.py`](examples/newsgroups_choice_integration.py).
+
+Two findings worth calling out honestly:
+
+- **The coverage guarantee held in all three runs** (≥90% every time), and
+  the relative set size shrank monotonically as the label space grew
+  (85.5% → 76.3% → 59.7% of all classes retained) — exactly what
+  `test_sets_tighten_as_label_space_grows` predicts on synthetic data,
+  now confirmed on a real model.
+- **Laya was underconfident here, not overconfident** — the opposite of
+  what's been reported for it on other tasks (e.g. phishing detection,
+  where independent testing found it badly overconfident). This is the
+  actual argument for sureband: calibration direction and severity aren't
+  a fixed property of a model, they depend on the deployment. A confidence
+  fix baked into a checkpoint can't account for that; a calibration step
+  run on your own held-out data can.
 
 ## Benchmarks
 
@@ -104,10 +156,12 @@ ship a model), so it isn't run automatically here — wire up your model in
 
 ## Status
 
-Early — v0.1.0. The core conformal math is tested (`tests/`, including an
+v0.1.0. The core conformal math is tested (`tests/`, including an
 end-to-end coverage check against a deliberately miscalibrated synthetic
-model), but this hasn't yet been run against a real Jev/Laya/Von output at
-scale. Issues and PRs welcome once this is public.
+model) and validated against real Laya output on AG News and 20
+Newsgroups (see "Validated on a real model" above). Not yet tested against
+Jev, Von, or `typical`, or on a task with a naturally larger label space
+than 10. Issues and PRs welcome.
 
 ## License
 
