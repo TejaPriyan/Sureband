@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sureband"
-version = "0.1.1"
+version = "0.1.2"
 description = "Distribution-free coverage guarantees for System One decision models (Jev, Laya, Von, typical, decider, or your own)."
 readme = "README.md"
 license = { text = "Apache-2.0" }

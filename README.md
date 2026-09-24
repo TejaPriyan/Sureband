@@ -1,5 +1,10 @@
 # sureband
 
+[![PyPI version](https://img.shields.io/pypi/v/sureband.svg?color=blue)](https://pypi.org/project/sureband/)
+[![Python versions](https://img.shields.io/pypi/pyversions/sureband.svg)](https://pypi.org/project/sureband/)
+[![CI](https://github.com/TejaPriyan/Sureband/actions/workflows/ci.yml/badge.svg)](https://github.com/TejaPriyan/Sureband/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 **Distribution-free coverage guarantees for System One decision models.**
 
 Jev, Laya, Von, `typical`, `decider` — every model in this new category
@@ -93,13 +98,11 @@ out the limits from us than from a critique.
   shifted user base), the coverage guarantee degrades along with it. Recalibrate
   periodically on fresh held-out data, the same way you'd re-validate any
   monitored model.
-- **Coverage is marginal, not per-class.** The guarantee holds *on average*
-  across all your data, not for every category individually. If "sales"
-  tickets are 2% of your calibration set, sureband can hit 90% overall
-  coverage while quietly doing much worse on "sales" specifically. If some
-  categories matter more than others (rare-but-important cases especially),
-  don't trust the marginal number alone — check per-class coverage yourself,
-  or wait for class-conditional (Mondrian) support, which isn't built yet.
+- **Coverage is marginal by default, not per-class.** The standard guarantee
+  holds *on average* across all your data. If some categories are rare or
+  especially critical, use class-conditional (Mondrian) calibration via
+  `sureband.Calibrator(alpha=0.1, mondrian=True)` to guarantee coverage for
+  each category independently.
 - **Calibration is a snapshot, not a subscription.** `Calibrator` doesn't
   update itself after `fit()`. If your traffic distribution drifts, the
   guarantee quietly drifts with it until you refit on fresh data — there's
