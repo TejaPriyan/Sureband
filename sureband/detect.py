@@ -86,7 +86,7 @@ def _looks_ordinal(labels) -> bool:
         "low", "medium", "med", "high", "none", "mild", "moderate", "severe",
         "not urgent", "soon", "blocking", "never", "sometimes", "always",
     }
-    lowered = {str(l).lower() for l in labels}
+    lowered = {str(label).lower() for label in labels}
     if lowered & ordinal_words:
         return True
-    return all(str(l).lstrip("-").isdigit() for l in labels)
+    return all(str(label).lstrip("-").isdigit() for label in labels)

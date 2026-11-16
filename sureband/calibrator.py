@@ -134,7 +134,7 @@ class Calibrator:
             prediction_set = frozenset(decision.labels[i] for i in included_indices)
 
         raw_probs = dict(zip(decision.labels, decision.probabilities))
-        confidence = max(raw_probs[l] for l in prediction_set) if prediction_set else 0.0
+        confidence = max(raw_probs[label] for label in prediction_set) if prediction_set else 0.0
 
         return ConformalResult(
             prediction_set=prediction_set,
