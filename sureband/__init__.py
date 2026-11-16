@@ -16,11 +16,11 @@ with a statistically guaranteed coverage rate, via split conformal prediction.
     result.covered_at       # 0.90 -- the guarantee this set was built to satisfy
 """
 
-from .types import Decision, ConformalResult
-from .detect import detect_type
 from .calibrator import Calibrator
 from .convenience import wrap
 from .decorators import calibrated
+from .detect import detect_type
+from .types import ConformalResult, Decision
 
 __all__ = [
     "Decision",
@@ -31,4 +31,4 @@ __all__ = [
     "calibrated",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"

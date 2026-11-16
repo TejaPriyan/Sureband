@@ -1,9 +1,8 @@
 """Validate sureband on 20 Newsgroups — a 10-way choice task.
 
-Uses sklearn's 20 Newsgroups dataset (no Hugging Face needed, already
-cached locally). We pick 10 semantically well-separated categories to
-give Laya a fair, unambiguous choice task, then test whether sureband's
-mean set size is tighter than on the 4-way AG News run.
+Uses sklearn's 20 Newsgroups dataset. We pick 10 semantically well-separated
+categories to give Laya a fair, unambiguous choice task, then test whether
+sureband's mean set size is tighter than on the 4-way AG News run.
 
 Hypothesis from test_sets_tighten_as_label_space_grows (synthetic):
   set_size / n_labels should *decrease* as n_labels grows, because
@@ -16,23 +15,12 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 from collections import defaultdict
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-
 import sureband
-
-try:
-    import laya
-except ImportError:
-    raise SystemExit("Run: pip install laya")
-
-try:
-    from sklearn.datasets import fetch_20newsgroups
-except ImportError:
-    raise SystemExit("Run: pip install scikit-learn")
 
 # 10 semantically distinct categories — avoids near-duplicate pairs like
 # comp.sys.ibm.pc.hardware / comp.sys.mac.hardware or the two hockey/baseball
@@ -52,24 +40,37 @@ SELECTED_CATEGORIES = [
 
 # Human-readable label → Laya criteria description
 CRITERIA = {
-    "alt.atheism":            "Posts about atheism, secularism, and debate about religion from a non-religious perspective",
-    "comp.graphics":          "Computer graphics, image rendering, 3D modelling, and visualization software",
-    "comp.os.ms-windows.misc":"Microsoft Windows operating system: tips, problems, drivers, setup questions",
-    "misc.forsale":           "Items for sale or wanted: classified ads, prices, buying/selling offers",
-    "rec.autos":              "Cars, automobiles, driving, car maintenance, reviews, and road trips",
-    "rec.sport.baseball":     "Baseball: games, teams, players, statistics, and league news",
-    "sci.crypt":              "Cryptography, encryption, privacy, security, and related mathematics",
-    "sci.med":                "Medicine, health, diseases, pharmaceuticals, and medical research",
-    "sci.space":              "Space exploration, astronomy, NASA, rockets, satellites, and the universe",
-    "talk.politics.guns":     "Gun control, firearms policy, the Second Amendment, and related politics",
+    "alt.atheism":             "Posts about atheism, secularism, and debate about religion from a non-religious perspective",
+    "comp.graphics":           "Computer graphics, image rendering, 3D modelling, and visualization software",
+    "comp.os.ms-windows.misc": "Microsoft Windows operating system: tips, problems, drivers, setup questions",
+    "misc.forsale":            "Items for sale or wanted: classified ads, prices, buying/selling offers",
+    "rec.autos":               "Cars, automobiles, driving, car maintenance, reviews, and road trips",
+    "rec.sport.baseball":      "Baseball: games, teams, players, statistics, and league news",
+    "sci.crypt":               "Cryptography, encryption, privacy, security, and related mathematics",
+    "sci.med":                 "Medicine, health, diseases, pharmaceuticals, and medical research",
+    "sci.space":               "Space exploration, astronomy, NASA, rockets, satellites, and the universe",
+    "talk.politics.guns":      "Gun control, firearms policy, the Second Amendment, and related politics",
 }
 
 N_LABELS = len(SELECTED_CATEGORIES)
 N_PER_CLASS = 75   # 75 per class × 10 = 750 total → 375 calibration + 375 test
 
 
+def _require_deps():
+    try:
+        import laya
+    except ImportError:
+        raise SystemExit("Run: pip install laya")
+    try:
+        from sklearn.datasets import fetch_20newsgroups
+    except ImportError:
+        raise SystemExit("Run: pip install scikit-learn")
+    return laya, fetch_20newsgroups
+
+
 def build_examples(seed: int = 42) -> list[tuple[str, str]]:
     """Return (text, true_label) pairs, balanced across selected categories."""
+    _, fetch_20newsgroups = _require_deps()
     ds = fetch_20newsgroups(
         subset="all",
         categories=SELECTED_CATEGORIES,
@@ -107,7 +108,12 @@ def ask(agent, text: str) -> dict:
     return result["answers"]["category"]
 
 
-def run():
+def run(offline: bool = False):
+    if offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+
+    laya, _ = _require_deps()
+
     print("Loading Laya...")
     agent = laya.load("convaiinnovations/laya")
 
@@ -170,7 +176,7 @@ def run():
             covered += 1
 
     mean_set_size = total_set_size / n
-    print(f"\n=== sureband (alpha=0.1, target >= 90% coverage) ===")
+    print("\n=== sureband (alpha=0.1, target >= 90% coverage) ===")
     print(f"Empirical coverage: {covered / n:.1%}")
     print(f"Mean set size:      {mean_set_size:.2f}  (of {N_LABELS} possible)")
     print(f"Set size ratio:     {mean_set_size / N_LABELS:.1%}  (mean_set / n_labels)")
@@ -187,4 +193,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Force Hugging Face offline mode using local cache only",
+    )
+    args = parser.parse_args()
+    run(offline=args.offline)

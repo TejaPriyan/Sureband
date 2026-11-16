@@ -1,10 +1,10 @@
 """Validate sureband against a REAL model: Laya (convaiinnovations/laya).
 
-Run this on your own machine -- it needs `pip install laya` and network
-access to Hugging Face to download weights (~421M params), neither of
-which is available in the sandbox this was written in.
+Run this on your own machine -- it needs `pip install laya datasets sureband`
+and network access to Hugging Face on first run (weights ~421M params). Pass
+`--offline` if your cache is already populated and you want offline mode.
 
-    pip install laya sureband
+    pip install laya datasets sureband
     python examples/laya_integration.py
 
 What this does:
@@ -24,23 +24,23 @@ outcome, and worth reporting either way.
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-
 import sureband
 
-try:
-    import laya
-except ImportError:
-    raise SystemExit("Run: pip install laya   (see module docstring)")
 
-try:
-    from datasets import load_dataset
-except ImportError:
-    raise SystemExit("Run: pip install datasets   (see module docstring)")
+def _require_deps():
+    try:
+        import laya
+    except ImportError:
+        raise SystemExit("Run: pip install laya   (see module docstring)")
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        raise SystemExit("Run: pip install datasets   (see module docstring)")
+    return laya, load_dataset
 
 
 def build_noul_examples(n_per_class=150, seed=0):
@@ -48,6 +48,7 @@ def build_noul_examples(n_per_class=150, seed=0):
     'is this World news?', 'is this Sports?', etc. Gives free ground truth
     without needing a labeled typed-decisions set of your own to start.
     """
+    _, load_dataset = _require_deps()
     ds = load_dataset("Chetah/ag_news", split="test")
     label_names = ["World", "Sports", "Business", "Sci/Tech"]  # Standard AG News labels
     rng = random.Random(seed)
@@ -76,7 +77,13 @@ def build_noul_examples(n_per_class=150, seed=0):
     return examples
 
 
-def run():
+def run(offline: bool = False):
+    if offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+
+    laya, _ = _require_deps()
+
     print("Loading Laya (convaiinnovations/laya)...")
     agent = laya.load("convaiinnovations/laya")
 
@@ -126,7 +133,7 @@ def run():
             correct += 1
     n = len(test_examples)
     print("\n=== Raw Laya (uncalibrated) ===")
-    print(f"Accuracy:            {correct / n:.1%}")
+    print(f"Accuracy:               {correct / n:.1%}")
     print(f"Mean stated confidence: {mean_conf / n:.1%}")
     print(f"Gap (overconfidence):   {mean_conf / n - correct / n:+.1%}")
 
@@ -144,4 +151,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Force Hugging Face offline mode using local cache only",
+    )
+    args = parser.parse_args()
+    run(offline=args.offline)

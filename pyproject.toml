@@ -34,3 +34,14 @@ Issues = "https://github.com/TejaPriyan/Sureband/issues"
 
 [tool.setuptools.packages.find]
 include = ["sureband*"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = true

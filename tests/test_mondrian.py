@@ -1,7 +1,7 @@
 """Tests for Mondrian (class-conditional) conformal calibration."""
 
 import random
-import pytest
+
 import sureband
 
 
@@ -72,3 +72,98 @@ def test_mondrian_n_calibration_queries():
 
     assert n_rare + n_easy + n_med == 500
     assert n_easy > n_rare
+
+
+def test_mondrian_score_preserves_ordinal_contiguity():
+    labels = ["low", "med", "high"]
+    cal_data = []
+    # Extreme classes need high thresholds; middle class is sharply calibrated
+    for _ in range(12):
+        cal_data.append(
+            ({"type": "score", "labels": labels, "distribution": [0.10, 0.20, 0.70]}, "low")
+        )
+        cal_data.append(
+            ({"type": "score", "labels": labels, "distribution": [0.70, 0.20, 0.10]}, "high")
+        )
+        cal_data.append(
+            ({"type": "score", "labels": labels, "distribution": [0.20, 0.60, 0.20]}, "med")
+        )
+
+    cal = sureband.Calibrator(alpha=0.1, mondrian=True).fit(cal_data)
+    for dist in ([0.20, 0.30, 0.50], [0.50, 0.30, 0.20], [0.45, 0.10, 0.45]):
+        res = cal.wrap({"type": "score", "labels": labels, "distribution": dist})
+        indices = sorted(labels.index(lbl) for lbl in res.prediction_set)
+        assert indices == list(range(indices[0], indices[-1] + 1)), (
+            f"Mondrian score prediction set skipped intermediate levels: {res.prediction_set}"
+        )
+    assert cal.wrap(
+        {"type": "score", "labels": labels, "distribution": [0.20, 0.30, 0.50]}
+    ).prediction_set == frozenset({"low", "med", "high"})
+
+    # Also test randomized 5-level ordinal distributions
+    levels5 = ["1", "2", "3", "4", "5"]
+    rng = random.Random(7)
+    cal5 = []
+    for _ in range(100):
+        raw_vals = [rng.random() + 0.05 for _ in range(5)]
+        total = sum(raw_vals)
+        dist = [v / total for v in raw_vals]
+        true_lbl = rng.choices(levels5, weights=dist, k=1)[0]
+        cal5.append(({"type": "score", "labels": levels5, "distribution": dist}, true_lbl))
+    cal5_fit = sureband.Calibrator(alpha=0.1, mondrian=True).fit(cal5)
+    for _ in range(50):
+        raw_vals = [rng.random() + 0.05 for _ in range(5)]
+        total = sum(raw_vals)
+        dist = [v / total for v in raw_vals]
+        res = cal5_fit.wrap({"type": "score", "labels": levels5, "distribution": dist})
+        indices = sorted(levels5.index(lbl) for lbl in res.prediction_set)
+        assert indices == list(range(indices[0], indices[-1] + 1))
+
+
+def test_mondrian_float_drift_full_mass_does_not_drop_label():
+    cal_data = []
+    for _ in range(12):
+        cal_data.append(
+            ({"type": "choice", "probabilities": {"a": 0.7, "b": 0.2, "c": 0.1}}, "c")
+        )
+        cal_data.append(
+            ({"type": "choice", "probabilities": {"a": 0.9, "b": 0.05, "c": 0.05}}, "a")
+        )
+        cal_data.append(
+            ({"type": "choice", "probabilities": {"a": 0.05, "b": 0.9, "c": 0.05}}, "b")
+        )
+
+    cal = sureband.Calibrator(alpha=0.1, mondrian=True).fit(cal_data)
+    res = cal.wrap({"type": "choice", "probabilities": {"a": 0.5, "b": 0.3, "c": 0.2}})
+    assert "c" in res.prediction_set
+
+
+def test_mondrian_rare_class_uses_infinite_threshold():
+    cal_data = [
+        ({"type": "choice", "probabilities": {"common": 0.95, "rare": 0.05}}, "common")
+        for _ in range(20)
+    ] + [
+        ({"type": "choice", "probabilities": {"common": 0.9, "rare": 0.1}}, "rare")
+        for _ in range(3)
+    ]
+    cal = sureband.Calibrator(alpha=0.1, mondrian=True).fit(cal_data)
+    assert cal._q_hat_mondrian[("choice", "rare")] == float("inf")
+    res = cal.wrap({"type": "choice", "probabilities": {"common": 0.99, "rare": 0.01}})
+    assert "rare" in res.prediction_set
+
+
+def test_mondrian_refit_clears_stale_class_thresholds():
+    cal = sureband.Calibrator(alpha=0.2, mondrian=True)
+    cal.fit([
+        ({"type": "choice", "probabilities": {"a": 0.8, "b": 0.1, "c": 0.1}}, "a"),
+        ({"type": "choice", "probabilities": {"a": 0.1, "b": 0.8, "c": 0.1}}, "b"),
+        ({"type": "choice", "probabilities": {"a": 0.1, "b": 0.1, "c": 0.8}}, "c"),
+    ])
+    assert cal.n_calibration("choice", label="c") == 1
+
+    cal.fit([
+        ({"type": "choice", "probabilities": {"a": 0.8, "b": 0.2}}, "a"),
+        ({"type": "choice", "probabilities": {"a": 0.2, "b": 0.8}}, "b"),
+    ])
+    assert cal.n_calibration("choice", label="c") == 0
+    assert ("choice", "c") not in cal._q_hat_mondrian

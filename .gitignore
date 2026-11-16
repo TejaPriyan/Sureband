@@ -6,6 +6,8 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
@@ -13,3 +15,8 @@ build/
 .coverage
 htmlcov/
 *.log
+.env
+.env.*
+.vscode/
+.idea/
+node_modules/

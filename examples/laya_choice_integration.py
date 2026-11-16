@@ -7,29 +7,17 @@ designed to be used for classification.
 Run with:
     python examples/laya_choice_integration.py
 
-Needs `pip install laya datasets sureband` and the weights already cached
-(or network access to Hugging Face on first run).
+Needs `pip install laya datasets sureband` and network access to Hugging Face
+on first run (or pass `--offline` to use already-cached weights and data).
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-
 import sureband
-
-try:
-    import laya
-except ImportError:
-    raise SystemExit("Run: pip install laya   (see module docstring)")
-
-try:
-    from datasets import load_dataset
-except ImportError:
-    raise SystemExit("Run: pip install datasets   (see module docstring)")
 
 LABEL_NAMES = ["World", "Sports", "Business", "Sci/Tech"]
 
@@ -45,12 +33,25 @@ CHOICE_QUESTION = {
 }
 
 
+def _require_deps():
+    try:
+        import laya
+    except ImportError:
+        raise SystemExit("Run: pip install laya   (see module docstring)")
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        raise SystemExit("Run: pip install datasets   (see module docstring)")
+    return laya, load_dataset
+
+
 def build_examples(n_per_class: int = 150, seed: int = 0) -> list:
-    """Sample n_per_class articles per AG News label (1200 total).
+    """Sample n_per_class articles per AG News label (600 total at default 150).
 
     Each example is (article_text, true_label_name).
     Labels in the dataset are 1-indexed; we convert to 0-indexed here.
     """
+    _, load_dataset = _require_deps()
     ds = load_dataset("Chetah/ag_news", split="test")
     rng = random.Random(seed)
 
@@ -80,7 +81,13 @@ def ask(agent, text: str) -> dict:
     return result["answers"]["topic"]
 
 
-def run():
+def run(offline: bool = False):
+    if offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+
+    laya, _ = _require_deps()
+
     print("Loading Laya (convaiinnovations/laya)...")
     agent = laya.load("convaiinnovations/laya")
 
@@ -147,4 +154,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Force Hugging Face offline mode using local cache only",
+    )
+    args = parser.parse_args()
+    run(offline=args.offline)

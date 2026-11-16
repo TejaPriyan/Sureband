@@ -159,7 +159,7 @@ ship a model), so it isn't run automatically here — wire up your model in
 
 ## Status
 
-v0.1.0. The core conformal math is tested (`tests/`, including an
+v0.1.2. The core conformal math is tested (`tests/`, including an
 end-to-end coverage check against a deliberately miscalibrated synthetic
 model) and validated against real Laya output on AG News and 20
 Newsgroups (see "Validated on a real model" above). Not yet tested against

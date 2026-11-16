@@ -4,7 +4,6 @@ Run with:
     python examples/interactive_demo.py
 """
 
-import sys
 import sureband
 
 # Pre-packaged calibration data for support ticket routing
@@ -49,7 +48,7 @@ def display_result(query: str, raw: dict, cal_90: sureband.Calibrator, cal_95: s
     res_95 = cal_95.wrap(raw)
 
     print("\n" + "=" * 65)
-    print(f"Query: \"{query}\"")
+    print(f'Query: "{query}"')
     print("-" * 65)
     print("Raw Model Output:")
     for label, p in sorted(probs.items(), key=lambda x: x[1], reverse=True):
@@ -58,12 +57,12 @@ def display_result(query: str, raw: dict, cal_90: sureband.Calibrator, cal_95: s
     print(f"  Top Decision:   {top_label} (reported confidence: {top_conf:.1%})")
 
     print("\nsureband Calibrated Guarantees:")
-    print(f"  Coverage >= 90% (alpha=0.10):")
-    print(f"    Prediction Set: {sorted(list(res_90.prediction_set))}")
+    print("  Coverage >= 90% (alpha=0.10):")
+    print(f"    Prediction Set: {sorted(res_90.prediction_set)}")
     print(f"    Certain?        {'YES (Singleton)' if res_90.is_certain else 'NO (Ambiguous, review required)'}")
 
-    print(f"  Coverage >= 95% (alpha=0.05):")
-    print(f"    Prediction Set: {sorted(list(res_95.prediction_set))}")
+    print("  Coverage >= 95% (alpha=0.05):")
+    print(f"    Prediction Set: {sorted(res_95.prediction_set)}")
     print(f"    Certain?        {'YES (Singleton)' if res_95.is_certain else 'NO (Ambiguous, review required)'}")
     print("=" * 65)
 

@@ -28,6 +28,45 @@ from __future__ import annotations
 import math
 from typing import List, Sequence, Tuple
 
+_EPS = 1e-12
+
+
+def _neumaier_step(total: float, comp: float, value: float) -> Tuple[float, float]:
+    """Accumulate `value` into `(total, comp)` using Neumaier compensated summation."""
+    next_total = total + value
+    if abs(total) >= abs(value):
+        comp += (total - next_total) + value
+    else:
+        comp += (value - next_total) + total
+    return next_total, comp
+
+
+def _ordered_score(probs: Sequence[float], order: Sequence[int], true_index: int) -> float:
+    """Cumulative probability mass along `order` through `true_index`."""
+    total, comp = 0.0, 0.0
+    for idx in order:
+        total, comp = _neumaier_step(total, comp, probs[idx])
+        if idx == true_index:
+            return min(total + comp, 1.0)
+    return 1.0  # pragma: no cover - unreachable if probs cover all indices
+
+
+def _ordered_set(probs: Sequence[float], order: Sequence[int], q_hat: float) -> List[int]:
+    """Prefix of `order` covering mass `q_hat` with floating-point tolerance."""
+    total, comp = 0.0, 0.0
+    included: List[int] = []
+    for idx in order:
+        cumulative = total + comp
+        if (
+            included
+            and cumulative + _EPS >= q_hat
+            and cumulative + probs[idx] > q_hat + _EPS
+        ):
+            break
+        total, comp = _neumaier_step(total, comp, probs[idx])
+        included.append(idx)
+    return included
+
 
 def quantile_level(n_calibration: int, alpha: float) -> float:
     """The finite-sample-corrected quantile level for split conformal.
@@ -35,12 +74,15 @@ def quantile_level(n_calibration: int, alpha: float) -> float:
     Using the ceil((n+1)(1-alpha))/n formula (Vovk, Gammerman & Shafer)
     rather than the naive (1-alpha) quantile is what makes the coverage
     guarantee hold exactly for finite calibration sets, not just
-    asymptotically.
+    asymptotically. When ceil((n+1)(1-alpha)) > n, returns float('inf') so
+    prediction sets cover all labels and preserve the finite-sample guarantee.
     """
     if n_calibration < 1:
         raise ValueError("need at least one calibration example")
-    level = math.ceil((n_calibration + 1) * (1 - alpha)) / n_calibration
-    return min(level, 1.0)
+    q_rank = math.ceil((n_calibration + 1) * (1 - alpha))
+    if q_rank > n_calibration:
+        return float("inf")
+    return q_rank / n_calibration
 
 
 # ---------------------------------------------------------------------------
@@ -57,25 +99,13 @@ def aps_score(probs: Sequence[float], true_index: int) -> float:
     before the true one is reached).
     """
     order = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
-    cumulative = 0.0
-    for idx in order:
-        cumulative += probs[idx]
-        if idx == true_index:
-            return cumulative
-    return 1.0  # pragma: no cover - unreachable if probs cover all indices
+    return _ordered_score(probs, order, true_index)
 
 
 def aps_set(probs: Sequence[float], q_hat: float) -> List[int]:
     """Prediction set (as label indices) for unordered labels at threshold q_hat."""
     order = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
-    cumulative = 0.0
-    included = []
-    for idx in order:
-        if cumulative >= q_hat and included:
-            break
-        cumulative += probs[idx]
-        included.append(idx)
-    return included
+    return _ordered_set(probs, order, q_hat)
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +139,7 @@ def _greedy_ordinal_order(probs: Sequence[float]) -> List[int]:
 def ordinal_score(probs: Sequence[float], true_index: int) -> float:
     """Nonconformity score for one calibration example (ordered labels)."""
     order = _greedy_ordinal_order(probs)
-    cumulative = 0.0
-    for idx in order:
-        cumulative += probs[idx]
-        if idx == true_index:
-            return cumulative
-    return 1.0  # pragma: no cover
+    return _ordered_score(probs, order, true_index)
 
 
 def ordinal_set(probs: Sequence[float], q_hat: float) -> List[int]:
@@ -125,14 +150,7 @@ def ordinal_set(probs: Sequence[float], q_hat: float) -> List[int]:
     set that skips a level in the middle of the rubric.
     """
     order = _greedy_ordinal_order(probs)
-    cumulative = 0.0
-    included = []
-    for idx in order:
-        if cumulative >= q_hat and included:
-            break
-        cumulative += probs[idx]
-        included.append(idx)
-    return included
+    return _ordered_set(probs, order, q_hat)
 
 
 NONCONFORMITY = {

@@ -7,23 +7,26 @@ Requires network access and the optional `benchmarks` extra:
 
 Usage:
     python benchmarks/run_jevbench.py --dataset LocalLLaMA/typed-decisions --model your-model-id
+    python benchmarks/run_jevbench.py --dataset LocalLLaMA/typed-decisions --model-fn my_module:predict_fn
 
 This script does NOT ship its own model. Point --model-fn at a function
-that takes (state, questions) and returns raw outputs in sureband's
-expected shape, e.g. a thin wrapper around Laya, Von, or a Jev API call.
-See `load_model_fn()` below for where to plug that in.
+`module:callable` that takes (state, questions) and returns raw outputs in
+sureband's expected shape, e.g. a thin wrapper around Laya, Von, or a Jev API
+call, or wire up `load_model_fn()` below and pass --model.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import random
 import sys
+from typing import Any, Callable, Optional
 
 import sureband
 
 
-def load_model_fn(model_id: str):
+def load_model_fn(model_id: str) -> Callable[[Any, Any], dict]:
     """Return a callable (state, questions) -> {question_name: raw_output}.
 
     This is intentionally left as an integration point rather than baked
@@ -40,16 +43,43 @@ def load_model_fn(model_id: str):
     )
 
 
-def run(dataset_name: str, model_id: str, alpha: float, calibration_frac: float, seed: int):
+def _resolve_model_fn(spec: str) -> Callable[[Any, Any], dict]:
+    """Import and return a callable specified as `module.path:function_name`."""
+    module_name, sep, attr_name = spec.partition(":")
+    if not sep or not module_name or not attr_name:
+        raise ValueError(
+            f"invalid --model-fn {spec!r}; expected 'module:callable'"
+        )
+    module = importlib.import_module(module_name)
+    fn = getattr(module, attr_name)
+    if not callable(fn):
+        raise TypeError(f"{spec!r} resolved to non-callable object {fn!r}")
+    return fn
+
+
+def run(
+    dataset_name: str,
+    model_id: Optional[str] = None,
+    alpha: float = 0.1,
+    calibration_frac: float = 0.5,
+    seed: int = 0,
+    model_fn_path: Optional[str] = None,
+):
     try:
         from datasets import load_dataset
     except ImportError:
         sys.exit(
             "Missing the 'datasets' package. Install with: "
-            "pip install \"sureband[benchmarks]\""
+            "pip install 'sureband[benchmarks]'"
         )
 
-    model_fn = load_model_fn(model_id)
+    if model_fn_path:
+        model_fn = _resolve_model_fn(model_fn_path)
+    elif model_id is not None:
+        model_fn = load_model_fn(model_id)
+    else:
+        raise ValueError("either --model or --model-fn must be provided")
+
     data = list(load_dataset(dataset_name, split="test"))
     rng = random.Random(seed)
     rng.shuffle(data)
@@ -78,18 +108,35 @@ def run(dataset_name: str, model_id: str, alpha: float, calibration_frac: float,
             raw_top1_correct += 1
 
     n = len(test_rows)
-    print(f"\nTarget coverage:        {1 - alpha:.1%}")
+    print(f"\nTarget coverage:         {1 - alpha:.1%}")
     print(f"Empirical coverage:      {covered / n:.1%}")
     print(f"Mean prediction set size: {total_set_size / n:.2f}")
     print(f"Raw top-1 accuracy:      {raw_top1_correct / n:.1%}  (uncalibrated, for reference)")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--dataset", default="LocalLLaMA/typed-decisions")
-    parser.add_argument("--model", required=True, help="model id passed to load_model_fn()")
+    parser.add_argument("--model", default=None, help="model id passed to load_model_fn()")
+    parser.add_argument(
+        "--model-fn",
+        default=None,
+        help="dotted import path 'module:callable' taking (state, questions)",
+    )
     parser.add_argument("--alpha", type=float, default=0.1, help="1 - target coverage")
     parser.add_argument("--calibration-frac", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
-    run(args.dataset, args.model, args.alpha, args.calibration_frac, args.seed)
+    if args.model is None and args.model_fn is None:
+        parser.error("either --model or --model-fn is required")
+    run(
+        args.dataset,
+        args.model,
+        args.alpha,
+        args.calibration_frac,
+        args.seed,
+        model_fn_path=args.model_fn,
+    )

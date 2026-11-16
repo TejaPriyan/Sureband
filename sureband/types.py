@@ -8,8 +8,9 @@ you trained yourself.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Sequence, Union
+from typing import Dict, FrozenSet, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,8 @@ class Decision:
         For "score" these are the rubric levels in ascending order.
 
     probabilities:
-        A probability per label, aligned with `labels`, summing to ~1.0.
+        A probability per label, aligned with `labels`, summing to ~1.0
+        (renormalized to 1.0 when within [0.95, 1.05]).
     """
 
     kind: str
@@ -37,14 +39,35 @@ class Decision:
     def __post_init__(self):
         if self.kind not in ("choice", "noul", "score"):
             raise ValueError(f"unknown decision kind: {self.kind!r}")
+        if not self.labels:
+            raise ValueError("labels must be non-empty")
         if len(self.labels) != len(self.probabilities):
             raise ValueError("labels and probabilities must be the same length")
-        total = sum(self.probabilities)
+        if len(set(self.labels)) != len(self.labels):
+            raise ValueError("labels must be unique")
+
+        probs = []
+        for p in self.probabilities:
+            if isinstance(p, bool):
+                raise ValueError(f"probabilities must be numbers, got bool {p!r}")
+            p_float = float(p)
+            if not math.isfinite(p_float):
+                raise ValueError(f"probabilities must be finite, got {p!r}")
+            if not (0.0 <= p_float <= 1.0):
+                raise ValueError(
+                    f"each probability must be between 0.0 and 1.0, got {p!r}"
+                )
+            probs.append(p_float)
+
+        total = math.fsum(probs)
         if not (0.95 <= total <= 1.05):
             raise ValueError(
                 f"probabilities must sum to ~1.0, got {total:.4f} "
-                f"({dict(zip(self.labels, self.probabilities))})"
+                f"({dict(zip(self.labels, probs))})"
             )
+        if total != 1.0:
+            probs = [min(p / total, 1.0) for p in probs]
+        object.__setattr__(self, "probabilities", tuple(probs))
 
     @property
     def top_label(self) -> str:
